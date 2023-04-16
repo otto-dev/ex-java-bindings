@@ -1,6 +1,3 @@
-// Copyright (c) 2020, Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
-// SPDX-License-Identifier: Apache-2.0
-
 package examples.pingpong.grpc;
 
 import com.daml.ledger.api.v1.CommandSubmissionServiceGrpc;
@@ -33,9 +30,6 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-/**
- * This class subscribes to the stream of transactions for a given party and reacts to Ping or Pong contracts.
- */
 public class PingPongProcessor {
 
     private final String party;
@@ -57,16 +51,13 @@ public class PingPongProcessor {
     }
 
     public void runIndefinitely() {
-        // assemble the request for the transaction stream
         GetTransactionsRequest transactionsRequest = GetTransactionsRequest.newBuilder()
                 .setLedgerId(ledgerId)
                 .setBegin(LedgerOffset.newBuilder().setBoundary(LedgerBoundary.LEDGER_BEGIN))
-                // we use the default filter since we don't want to filter out any contracts
                 .setFilter(TransactionFilter.newBuilder().putFiltersByParty(party, Filters.getDefaultInstance()))
                 .setVerbose(true)
                 .build();
 
-        // this StreamObserver reacts to transactions and prints a message if an error occurs or the stream gets closed
         StreamObserver<GetTransactionsResponse> transactionObserver = new StreamObserver<GetTransactionsResponse>() {
             @Override
             public void onNext(GetTransactionsResponse value) {
@@ -88,11 +79,6 @@ public class PingPongProcessor {
         transactionService.getTransactions(transactionsRequest, transactionObserver);
     }
 
-    /**
-     * Processes a transaction and sends the resulting commands to the Command Submission Service
-     *
-     * @param tx the Transaction to process
-     */
     private void processTransaction(Transaction tx) {
         List<Command> commands = tx.getEventsList().stream()
                 .filter(Event::hasCreated).map(Event::getCreated)
@@ -114,16 +100,6 @@ public class PingPongProcessor {
         }
     }
 
-    /**
-     * For each {@link CreatedEvent} where the <code>receiver</code> is
-     * the current party, exercise the <code>Pong</code> choice of <code>Ping</code> contracts, or the <code>Ping</code>
-     * choice of <code>Pong</code> contracts.
-     *
-     * @param workflowId the workflow the event is part of
-     * @param event      the {@link CreatedEvent} to process
-     * @return an empty <code>Stream</code> if this event doesn't trigger any action for this {@link PingPongProcessor}'s
-     * party
-     */
     private Stream<Command> processEvent(String workflowId, CreatedEvent event) {
         Identifier template = event.getTemplateId();
 
@@ -140,7 +116,6 @@ public class PingPongProcessor {
                 .stream()
                 .collect(Collectors.toMap(RecordField::getLabel, RecordField::getValue));
 
-        // check that this party is set as the receiver of the contract
         boolean thisPartyIsReceiver = fields.get("receiver").getParty().equals(party);
 
         if (!thisPartyIsReceiver) return Stream.empty();
@@ -151,7 +126,6 @@ public class PingPongProcessor {
         Long count = fields.get("count").getInt64();
         System.out.printf("%s is exercising %s on %s in workflow %s at count %d\n", party, choice, contractId, workflowId, count);
 
-        // assemble the exercise command
         Command cmd = Command
                 .newBuilder()
                 .setExercise(ExerciseCommand
