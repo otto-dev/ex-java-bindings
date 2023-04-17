@@ -32,33 +32,33 @@ import java.util.stream.Stream;
 
 public class PingPongProcessor {
 
-    private final String party;
-    private final String ledgerId;
+	private final String party;
+	private final String ledgerId;
 
-    private final TransactionServiceStub transactionService;
-    private final CommandSubmissionServiceBlockingStub submissionService;
+	private final TransactionServiceStub transactionService;
+	private final CommandSubmissionServiceBlockingStub submissionService;
 
-    private final Identifier pingIdentifier;
-    private final Identifier pongIdentifier;
+	private final Identifier pingIdentifier;
+	private final Identifier pongIdentifier;
 
-    public PingPongProcessor(String party, String ledgerId, ManagedChannel channel, Identifier pingIdentifier, Identifier pongIdentifier) {
-        this.party = party;
-        this.ledgerId = ledgerId;
-        this.transactionService = TransactionServiceGrpc.newStub(channel);
-        this.submissionService = CommandSubmissionServiceGrpc.newBlockingStub(channel);
-        this.pingIdentifier = pingIdentifier;
-        this.pongIdentifier = pongIdentifier;
-    }
+	public PingPongProcessor(String party, String ledgerId, ManagedChannel channel, Identifier pingIdentifier, Identifier pongIdentifier) {
+		this.party = party;
+		this.ledgerId = ledgerId;
+		this.transactionService = TransactionServiceGrpc.newStub(channel);
+		this.submissionService = CommandSubmissionServiceGrpc.newBlockingStub(channel);
+		this.pingIdentifier = pingIdentifier;
+		this.pongIdentifier = pongIdentifier;
+	}
 
-    public void runIndefinitely() {
-        GetTransactionsRequest transactionsRequest = GetTransactionsRequest.newBuilder()
-                .setLedgerId(ledgerId)
-                .setBegin(LedgerOffset.newBuilder().setBoundary(LedgerBoundary.LEDGER_BEGIN))
-                .setFilter(TransactionFilter.newBuilder().putFiltersByParty(party, Filters.getDefaultInstance()))
-                .setVerbose(true)
-                .build();
+	public void runIndefinitely() {
+		GetTransactionsRequest transactionsRequest = GetTransactionsRequest.newBuilder()
+				.setLedgerId(ledgerId)
+				.setBegin(LedgerOffset.newBuilder().setBoundary(LedgerBoundary.LEDGER_BEGIN))
+				.setFilter(TransactionFilter.newBuilder().putFiltersByParty(party, Filters.getDefaultInstance()))
+				.setVerbose(true)
+				.build();
 
-        StreamObserver<GetTransactionsResponse> transactionObserver = new StreamObserver<GetTransactionsResponse>() {
+		StreamObserver<GetTransactionsResponse> transactionObserver = new StreamObserver<>() {
             @Override
             public void onNext(GetTransactionsResponse value) {
                 value.getTransactionsList().forEach(PingPongProcessor.this::processTransaction);
@@ -75,67 +75,67 @@ public class PingPongProcessor {
                 System.out.printf("%s's transactions stream completed.\n", party);
             }
         };
-        System.out.printf("%s starts reading transactions.\n", party);
-        transactionService.getTransactions(transactionsRequest, transactionObserver);
-    }
+		System.out.printf("%s starts reading transactions.\n", party);
+		transactionService.getTransactions(transactionsRequest, transactionObserver);
+	}
 
-    private void processTransaction(Transaction tx) {
-        List<Command> commands = tx.getEventsList().stream()
-                .filter(Event::hasCreated).map(Event::getCreated)
-                .flatMap(e -> processEvent(tx.getWorkflowId(), e))
-                .collect(Collectors.toList());
+	private void processTransaction(Transaction tx) {
+		List<Command> commands = tx.getEventsList().stream()
+				.filter(Event::hasCreated).map(Event::getCreated)
+				.flatMap(e -> processEvent(tx.getWorkflowId(), e))
+				.collect(Collectors.toList());
 
-        if (!commands.isEmpty()) {
-            SubmitRequest request = SubmitRequest.newBuilder()
-                    .setCommands(Commands.newBuilder()
-                            .setCommandId(UUID.randomUUID().toString())
-                            .setWorkflowId(tx.getWorkflowId())
-                            .setLedgerId(ledgerId)
-                            .setParty(party)
-                            .setApplicationId(PingPongGrpcMain.APP_ID)
-                            .addAllCommands(commands)
-                            .build())
-                    .build();
-            submissionService.submit(request);
-        }
-    }
+		if (!commands.isEmpty()) {
+			SubmitRequest request = SubmitRequest.newBuilder()
+					.setCommands(Commands.newBuilder()
+							.setCommandId(UUID.randomUUID().toString())
+							.setWorkflowId(tx.getWorkflowId())
+							.setLedgerId(ledgerId)
+							.setParty(party)
+							.setApplicationId(PingPongGrpcMain.APP_ID)
+							.addAllCommands(commands)
+							.build())
+					.build();
+			submissionService.submit(request);
+		}
+	}
 
-    private Stream<Command> processEvent(String workflowId, CreatedEvent event) {
-        Identifier template = event.getTemplateId();
+	private Stream<Command> processEvent(String workflowId, CreatedEvent event) {
+		Identifier template = event.getTemplateId();
 
-        boolean isPingPongModule = template.getModuleName().equals(pingIdentifier.getModuleName());
+		boolean isPingPongModule = template.getModuleName().equals(pingIdentifier.getModuleName());
 
-        boolean isPing = template.getEntityName().equals(pingIdentifier.getEntityName());
-        boolean isPong = template.getEntityName().equals(pongIdentifier.getEntityName());
+		boolean isPing = template.getEntityName().equals(pingIdentifier.getEntityName());
+		boolean isPong = template.getEntityName().equals(pongIdentifier.getEntityName());
 
-        if (!isPingPongModule || !isPing && !isPong) return Stream.empty();
+		if (!isPingPongModule || !isPing && !isPong) return Stream.empty();
 
-        Map<String, Value> fields = event
-                .getCreateArguments()
-                .getFieldsList()
-                .stream()
-                .collect(Collectors.toMap(RecordField::getLabel, RecordField::getValue));
+		Map<String, Value> fields = event
+				.getCreateArguments()
+				.getFieldsList()
+				.stream()
+				.collect(Collectors.toMap(RecordField::getLabel, RecordField::getValue));
 
-        boolean thisPartyIsReceiver = fields.get("receiver").getParty().equals(party);
+		boolean thisPartyIsReceiver = fields.get("receiver").getParty().equals(party);
 
-        if (!thisPartyIsReceiver) return Stream.empty();
+		if (!thisPartyIsReceiver) return Stream.empty();
 
-        String contractId = event.getContractId();
-        String choice = isPing ? "RespondPong" : "RespondPing";
+		String contractId = event.getContractId();
+		String choice = isPing ? "RespondPong" : "RespondPing";
 
-        Long count = fields.get("count").getInt64();
-        System.out.printf("%s is exercising %s on %s in workflow %s at count %d\n", party, choice, contractId, workflowId, count);
+		Long count = fields.get("count").getInt64();
+		System.out.printf("%s is exercising %s on %s in workflow %s at count %d\n", party, choice, contractId, workflowId, count);
 
-        Command cmd = Command
-                .newBuilder()
-                .setExercise(ExerciseCommand
-                        .newBuilder()
-                        .setTemplateId(template)
-                        .setContractId(contractId)
-                        .setChoice(choice)
-                        .setChoiceArgument(Value.newBuilder().setRecord(Record.getDefaultInstance())))
-                .build();
+		Command cmd = Command
+				.newBuilder()
+				.setExercise(ExerciseCommand
+						.newBuilder()
+						.setTemplateId(template)
+						.setContractId(contractId)
+						.setChoice(choice)
+						.setChoiceArgument(Value.newBuilder().setRecord(Record.getDefaultInstance())))
+				.build();
 
-        return Stream.of(cmd);
-    }
+		return Stream.of(cmd);
+	}
 }

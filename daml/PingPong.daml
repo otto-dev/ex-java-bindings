@@ -1,6 +1,3 @@
--- Copyright (c) 2020, Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
--- SPDX-License-Identifier: Apache-2.0
-
 module PingPong where
 
 import Daml.Script
@@ -41,11 +38,8 @@ template Pong
 
 setup : Script()
 setup = script do
-  -- Set up parties
   alice <- allocatePartyWithHint "Alice" (PartyIdHint "Alice")
   bob <- allocatePartyWithHint "Bob" (PartyIdHint "Bob")
-
-  -- Needed in 2.0, see https://docs.daml.com/tools/navigator/index.html
   aliceId <- validateUserId "alice"
   bobId <- validateUserId "bob"
   createUser (User aliceId (Some alice)) [CanActAs alice]
